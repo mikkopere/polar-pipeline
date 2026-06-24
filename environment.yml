@@ -1,0 +1,11 @@
+name: polar
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - matplotlib
+  - jupyterlab
+  - notebook
+  - numpy
+  - pandas
+prefix: /home/mikko/anaconda3/envs/polar
