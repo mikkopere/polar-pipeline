@@ -12,6 +12,7 @@ Built as a learning project covering Python, REST APIs, OAuth2, SQLite, and SQL.
 - Stores everything in a local SQLite database (`polar.db`)
 - Computes training load metrics: TRIMP (Banister), ATL (acute training load / fatigue), CTL (chronic training load / fitness), and TSB (training stress balance / form)
 - Handles OAuth2 token refresh automatically
+- Visualises training load and recovery trends
 
 ---
 
@@ -19,14 +20,16 @@ Built as a learning project covering Python, REST APIs, OAuth2, SQLite, and SQL.
 
 ```
 polar-pipeline/
-├── main.py                 # Entry point — fetch data and recompute metrics
-├── fetch_all.py            # Fetches all data types from Polar API
-├── compute_ctl_atl.py      # Computes TRIMP, ATL, CTL, TSB
-├── polar_client.py         # Polar API client with automatic token refresh
-├── schema.sql              # SQLite schema — recreates database from scratch
+├── main.py                  # Entry point — fetch data and recompute metrics
+├── fetch_all.py             # Fetches all data types from Polar API
+├── compute_ctl_atl.py       # Computes TRIMP, ATL, CTL, TSB
+├── polar_client.py          # Polar API client with automatic token refresh
+├── plot_training_load.py    # Three-panel matplotlib training load chart
+├── schema.sql               # SQLite schema — recreates database from scratch
+├── environment.yml          # Conda environment specification
 ├── .gitignore
 ├── README.md
-└── tokens.json             # NOT in git — create manually (see setup below)
+└── tokens.json              # NOT in git — create manually (see setup below)
 ```
 
 ---
@@ -38,9 +41,9 @@ Seven tables in `polar.db`:
 | Table | Contents |
 |---|---|
 | `training_sessions` | One row per workout (sport, duration, HR, calories, distance) |
-| `hr_zones` | Time in each HR zone per session |
-| `nightly_recharge` | ANS charge, recovery indicator, nocturnal RMSSD |
-| `sleep` | Sleep duration and score (placeholder — see notes) |
+| `hr_zones` | Time in each HR zone per session (currently empty — see API notes) |
+| `nightly_recharge` | ANS charge, recovery indicator, nocturnal RMSSD and baseline values |
+| `sleep` | Sleep duration and score (placeholder — see API notes) |
 | `orthostatic_tests` | Morning HRV test results (RMSSD supine/standing, RR intervals) |
 | `daily_physical` | Weight, resting HR, VO2max from fitness tests |
 | `daily_training_load` | Computed TRIMP, ATL, CTL, TSB per day |
@@ -51,10 +54,13 @@ Seven tables in `polar.db`:
 
 ### 1. Prerequisites
 
-Python 3.9+ and one external library:
+Clone the repo and create the conda environment:
 
 ```bash
-pip install requests
+git clone https://github.com/YOUR_USERNAME/polar-pipeline.git
+cd polar-pipeline
+conda env create -f environment.yml
+conda activate polar
 ```
 
 ### 2. Polar AccessLink credentials
@@ -93,7 +99,7 @@ curl -X POST https://auth.polar.com/oauth/token \
   -d "grant_type=authorization_code&code=YOUR_CODE&redirect_uri=http://localhost:5000/oauth2_callback"
 ```
 
-Save the returned `access_token` and `refresh_token` into `tokens.json`. After this, token refresh is automatic.
+Save the returned `access_token` and `refresh_token` into `tokens.json`. After this, token refresh is fully automatic.
 
 ### 5. Register your Polar user (first time only)
 
@@ -122,11 +128,17 @@ python main.py
 
 This fetches any new data and recomputes ATL/CTL/TSB automatically.
 
+To generate the training load chart:
+
+```bash
+python plot_training_load.py
+```
+
 ---
 
 ## Training load metrics
 
-TRIMP (TRaining IMPulse) is computed using the Banister formula for males:
+Since Polar's cardio load is not available through any public API endpoint (see API notes below), TRIMP is computed using the Banister formula for males:
 
 $$\text{HRR} = \frac{\text{HR}_{avg} - \text{HR}_{rest}}{\text{HR}_{max} - \text{HR}_{rest}}$$
 
@@ -140,21 +152,46 @@ $$\text{CTL}_t = \text{CTL}_{t-1} + (L_t - \text{CTL}_{t-1})(1 - e^{-1/42})$$
 
 $$\text{TSB}_t = \text{CTL}_{t-1} - \text{ATL}_{t-1}$$
 
-HR rest and max are taken from Polar profile settings (resting HR 55 bpm, max HR 171 bpm).
+HR rest (55 bpm) and max (171 bpm) are taken from Polar profile settings.
 
 ---
 
-## Known gaps and future work
+## Polar API notes
 
-- **Sleep scoring**: The `sleep` table is a placeholder. The Polar v4 API returns raw sleep-wake state vectors rather than summary scores. Computing total sleep time and fragmentation from these vectors is planned.
-- **Cardio load**: Polar's own TRIMP values are not returned by the training session list endpoint. Fetching per-session detail to retrieve these and compare against computed TRIMP is planned.
-- **Visualisation**: Plotting CTL/ATL/TSB and recovery trends over time using matplotlib or R/ggplot2.
-- **Automation**: Scheduling `main.py` as a daily cron job.
+### What works in v4
+- Nightly recharge: full ANS charge, recovery indicator, nocturnal RMSSD, baseline values
+- Training sessions: summary data (duration, HR, calories, distance, sport)
+- Tests: orthostatic test results, fitness tests (VO2max, weight, resting HR)
+- Sleep: raw sleep-wake state vectors (see limitations below)
+
+### Known API limitations
+
+**Cardio load (TRIMP) not accessible via any public API.**
+The v4 training sessions endpoint (`/v4/data/training-sessions/list`) is the only training session endpoint — there is no per-session detail endpoint. HR zones and Polar's own cardio load values are not returned by any v4 endpoint. An endpoint at `/v4/data/users/{id}/cardio-load` suggested elsewhere does not exist (returns 404). Polar computes cardio load internally from raw HR samples and serves it through private APIs to their own apps. The v3 transaction model gives access to raw HR samples from which it could be computed, but only for sessions synced after client registration.
+
+**Sleep scoring not accessible.**
+The `/v4/data/sleeps` endpoint returns only a list of dates. The `/v4/data/sleep-wake-vectors` endpoint returns raw sleep/wake state transitions as millisecond offsets. Polar's sleep score is computed internally and not exposed through the public API. Total sleep time and fragmentation can be derived from the state vectors but requires additional processing.
+
+**Historical data window.**
+The API only provides data from the 90 days prior to client registration. Older data is not accessible through any API endpoint.
+
+**Endpoint date format quirks.**
+- Plain dates (`2026-06-01`): nightly recharge, sleep, tests
+- Datetime strings (`2026-06-01T00:00:00`): training sessions
+
+### Sport codes
+| Code | Sport |
+|---|---|
+| 15 | Strength training |
+| 18 | Road/indoor cycling |
+| 83 | Auto-detected activity (Loop Gen 2) |
+| 177 | E-bike |
 
 ---
 
-## Notes
+## Future work
 
-- The API only provides data from the 90 days prior to client registration. Historical data beyond that window is not accessible via the API.
-- The Polar AccessLink v4 API requires datetime strings (`2026-06-01T00:00:00`) for training sessions but plain dates (`2026-06-01`) for nightly recharge and tests.
-- Sport codes: 15 = strength training, 18 = road/indoor cycling, 177 = e-bike, 83 = auto-detected activity (Loop Gen 2).
+- **Streamlit dashboard**: browser-based daily summary showing recovery status, TSB, and HRV trend
+- **Sleep processing**: derive total sleep time and fragmentation from sleep-wake vectors
+- **SwiftUI app**: iOS app as the long-term interface goal
+- **Automation**: daily cron job on Mac Mini
