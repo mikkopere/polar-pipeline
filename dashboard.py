@@ -130,6 +130,70 @@ if rec_row is not None:
     col5.metric("Nocturnal RMSSD", f"{int(rec_row['rmssd'])} ms",
                 help="HRV during sleep")
 
+# --- HRV horizontal scales ---
+def hrv_gauge(series, current, label):
+    """Semicircular gauge showing current HRV value within personal min/max range."""
+    mn  = float(series.min())
+    mx  = float(series.max())
+    avg = float(series.mean())
+    third = (mx - mn) / 3
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=float(current),
+        title={"text": label, "font": {"size": 13}},
+        number={"suffix": " ms", "font": {"size": 28}, "valueformat": ".0f"},
+        gauge={
+            "axis": {
+                "range": [mn, mx],
+                "tickvals": [mn, avg, mx],
+                "ticktext": [f"{mn:.0f}", f"avg {avg:.0f}", f"{mx:.0f}"],
+                "tickwidth": 1,
+                "tickcolor": "darkgrey"
+            },
+            "bar": {"color": "#1565C0", "thickness": 0.25},
+            "bgcolor": "white",
+            "borderwidth": 1,
+            "bordercolor": "lightgrey",
+            "steps": [
+                {"range": [mn,           mn + third],     "color": "#FFCDD2"},
+                {"range": [mn + third,   mn + 2 * third], "color": "#FFF9C4"},
+                {"range": [mn + 2*third, mx],             "color": "#C8E6C9"},
+            ],
+            "threshold": {
+                "line": {"color": "#555", "width": 2},
+                "thickness": 0.75,
+                "value": avg
+            }
+        }
+    ))
+    fig.update_layout(
+        height=230,
+        margin=dict(t=30, b=10, l=30, r=30),
+        paper_bgcolor="white"
+    )
+    return fig
+
+st.subheader("HRV personal range")
+hrv_col1, hrv_col2 = st.columns(2)
+
+with hrv_col1:
+    rmssd_series = df_recovery["rmssd"].dropna()
+    if rec_row is not None and not rmssd_series.empty:
+        st.plotly_chart(
+            hrv_gauge(rmssd_series, rec_row["rmssd"], "Nocturnal RMSSD"),
+            width="stretch"
+        )
+
+with hrv_col2:
+    ortho_series = df_ortho["rmssd_supine"].dropna()
+    latest_ortho = df_ortho.iloc[-1] if not df_ortho.empty else None
+    if latest_ortho is not None and not ortho_series.empty:
+        st.plotly_chart(
+            hrv_gauge(ortho_series, latest_ortho["rmssd_supine"], "Morning RMSSD (supine)"),
+            width="stretch"
+        )
+
 st.divider()
 
 # --- CTL / ATL / TSB chart ---
