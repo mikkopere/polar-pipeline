@@ -50,13 +50,14 @@ def load_nightly_recharge(days=90):
 def load_recent_sessions(n=10):
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query("""
-        SELECT date, sport_id, duration_sec / 60 AS duration_min,
-               hr_avg, hr_max, calories,
-               ROUND(distance_m / 1000.0, 1) AS distance_km,
-               training_benefit
-        FROM training_sessions
-        WHERE duration_sec > 300
-        ORDER BY date DESC
+        SELECT e.date, e.sport_id, e.duration_sec / 60 AS duration_min,
+               s.hr_avg, s.hr_max, e.calories,
+               ROUND(e.distance_m / 1000.0, 1) AS distance_km,
+               s.training_benefit
+        FROM exercises e
+        JOIN training_sessions s ON s.session_id = e.session_id
+        WHERE e.duration_sec > 300
+        ORDER BY e.date DESC
         LIMIT ?
     """, conn, params=[n])
     conn.close()
