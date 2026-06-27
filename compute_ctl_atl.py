@@ -31,13 +31,14 @@ def compute():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
 
-    # Step 1: compute daily TRIMP load from training sessions
+    # Step 1: compute daily TRIMP load from exercises
     # Filter out very short sessions (accidental button presses etc.)
     sessions = conn.execute("""
-        SELECT date, duration_sec, hr_avg
-        FROM training_sessions
-        WHERE duration_sec > 300
-        ORDER BY date
+        SELECT e.date, e.duration_sec, s.hr_avg
+        FROM exercises e
+        JOIN training_sessions s ON s.session_id = e.session_id
+        WHERE e.duration_sec > 300
+        ORDER BY e.date
     """).fetchall()
 
     daily_load = {}
@@ -50,7 +51,7 @@ def compute():
         SELECT MIN(d) FROM (
             SELECT MIN(sleep_result_date) AS d FROM nightly_recharge
             UNION ALL
-            SELECT MIN(date) AS d FROM training_sessions WHERE duration_sec > 300
+            SELECT MIN(date) AS d FROM exercises WHERE duration_sec > 300
         )
     """).fetchone()[0]
 

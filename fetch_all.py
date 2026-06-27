@@ -86,7 +86,6 @@ def fetch_sleep(client, from_date, to_date):
 
 def fetch_training_sessions(client, from_date, to_date):
     print("\nFetching training sessions...")
-    # This endpoint needs full datetime strings, not just dates
     results = []
     for chunk_from, chunk_to in date_chunks(from_date, to_date):
         from_dt = f"{chunk_from}T00:00:00"
@@ -102,35 +101,60 @@ def fetch_training_sessions(client, from_date, to_date):
         return
 
     conn = db()
-    inserted = skipped = 0
+    sess_ins = sess_skip = ex_ins = ex_skip = 0
+
     for r in results:
+        # --- training_sessions: session-level wrapper ---
         cur = conn.execute("""
             INSERT OR IGNORE INTO training_sessions (
                 session_id, start_time, stop_time, date,
-                sport_id, duration_sec, hr_avg, hr_max,
-                calories, distance_m, training_benefit, recovery_time_sec
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                device_id, hr_avg, hr_max,
+                training_benefit, recovery_time_sec
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             r["identifier"]["id"],
             r["startTime"],
             r.get("stopTime"),
-            r["startTime"][:10],          # extract date from datetime
-            r["sport"]["id"],
-            r["durationMillis"] // 1000,
-            r.get("hrAvg"),               # absent for some sessions
-            r.get("hrMax"),               # absent for some sessions
-            r.get("calories"),
-            r.get("distanceMeters"),
+            r["startTime"][:10],
+            r.get("deviceId"),
+            r.get("hrAvg"),
+            r.get("hrMax"),
             r.get("trainingBenefit"),
-            int(r["recoveryTimeMillis"]) // 1000  # stored as string in JSON
+            int(r["recoveryTimeMillis"]) // 1000
         ))
-        if cur.rowcount == 1:
-            inserted += 1
-        else:
-            skipped += 1
+        if cur.rowcount == 1: sess_ins += 1
+        else: sess_skip += 1
+
+        # --- exercises: one or more per session ---
+        for e in r.get("exercises", []):
+            cur = conn.execute("""
+                INSERT OR IGNORE INTO exercises (
+                    exercise_id, session_id,
+                    start_time, stop_time, date,
+                    sport_id, duration_sec,
+                    calories, distance_m,
+                    ascent_m, descent_m
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(e["identifier"]["id"]),
+                r["identifier"]["id"],
+                e["startTime"],
+                e.get("stopTime"),
+                e["startTime"][:10],
+                e["sport"]["id"],
+                e["durationMillis"] // 1000,
+                e.get("calories"),
+                e.get("distanceMeters"),
+                e.get("ascentMeters"),
+                e.get("descentMeters")
+            ))
+            if cur.rowcount == 1: ex_ins += 1
+            else: ex_skip += 1
+
     conn.commit()
     conn.close()
-    print(f"  Done: {inserted} inserted, {skipped} already existed.")
+    print(f"  Sessions: {sess_ins} inserted, {sess_skip} existed.")
+    print(f"  Exercises: {ex_ins} inserted, {ex_skip} existed.")
 
 # --- Tests (orthostatic + fitness/VO2max) ---
 

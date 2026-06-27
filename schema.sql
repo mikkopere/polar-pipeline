@@ -1,4 +1,7 @@
+DROP TABLE IF EXISTS exercise_samples;
+DROP TABLE IF EXISTS exercise_route;
 DROP TABLE IF EXISTS hr_zones;
+DROP TABLE IF EXISTS exercises;
 DROP TABLE IF EXISTS training_sessions;
 DROP TABLE IF EXISTS nightly_recharge;
 DROP TABLE IF EXISTS sleep;
@@ -15,24 +18,37 @@ CREATE TABLE IF NOT EXISTS training_sessions
     start_time TIMESTAMP,
     stop_time TIMESTAMP,
     date DATE,
-    sport_id TEXT,
-    duration_sec INTEGER,
+    device_id TEXT,
     hr_avg INTEGER,
     hr_max INTEGER,
+    training_benefit TEXT,
+    recovery_time_sec INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS exercises
+(
+    exercise_id TEXT PRIMARY KEY,
+    session_id TEXT,
+    start_time TIMESTAMP,
+    stop_time TIMESTAMP,
+    date DATE,
+    sport_id TEXT,
+    duration_sec INTEGER,
     cardio_load REAL,
     calories INTEGER,
     distance_m REAL,
-    training_benefit TEXT,
-    recovery_time_sec INTEGER
+    ascent_m REAL,
+    descent_m REAL,
+    FOREIGN KEY (session_id) REFERENCES training_sessions(session_id)
 );
 
 CREATE TABLE IF NOT EXISTS hr_zones
 (
     id INTEGER PRIMARY KEY,
-    session_id TEXT,
+    exercise_id TEXT,
     zone_number INTEGER,
     seconds_in_zone INTEGER,
-    FOREIGN KEY (session_id) REFERENCES training_sessions(session_id)
+    FOREIGN KEY (exercise_id) REFERENCES exercises(exercise_id)
 );
 
 CREATE TABLE IF NOT EXISTS nightly_recharge
@@ -92,3 +108,31 @@ CREATE TABLE IF NOT EXISTS daily_training_load
     ctl REAL,
     tsb REAL
 );
+
+CREATE TABLE IF NOT EXISTS exercise_samples
+(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exercise_id TEXT,
+    t_offset_sec INTEGER,
+    hr INTEGER,
+    speed REAL,
+    altitude REAL,
+    cadence INTEGER,
+    FOREIGN KEY (exercise_id) REFERENCES exercises(exercise_id)
+);
+
+CREATE TABLE IF NOT EXISTS exercise_route
+(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exercise_id TEXT,
+    t_offset_sec INTEGER,
+    lat REAL,
+    lon REAL,
+    altitude REAL,
+    FOREIGN KEY (exercise_id) REFERENCES exercises(exercise_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_samples_exercise
+    ON exercise_samples(exercise_id);
+CREATE INDEX IF NOT EXISTS idx_route_exercise
+    ON exercise_route(exercise_id);
