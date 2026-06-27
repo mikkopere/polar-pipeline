@@ -181,8 +181,9 @@ hrv_col1, hrv_col2 = st.columns(2)
 with hrv_col1:
     rmssd_series = df_recovery["rmssd"].dropna()
     if rec_row is not None and not rmssd_series.empty:
+        st.caption("Nocturnal RMSSD — HRV measured during sleep (90-day range)")
         st.plotly_chart(
-            hrv_gauge(rmssd_series, rec_row["rmssd"], "Nocturnal RMSSD"),
+            hrv_gauge(rmssd_series, rec_row["rmssd"], "Nocturnal RMSSD (during sleep)"),
             width="stretch"
         )
 
@@ -190,8 +191,9 @@ with hrv_col2:
     ortho_series = df_ortho["rmssd_supine"].dropna()
     latest_ortho = df_ortho.iloc[-1] if not df_ortho.empty else None
     if latest_ortho is not None and not ortho_series.empty:
+        st.caption("Morning RMSSD supine — HRV lying down during orthostatic test (90-day range)")
         st.plotly_chart(
-            hrv_gauge(ortho_series, latest_ortho["rmssd_supine"], "Morning RMSSD (supine)"),
+            hrv_gauge(ortho_series, latest_ortho["rmssd_supine"], "Morning RMSSD (supine, orthostatic test)"),
             width="stretch"
         )
 
