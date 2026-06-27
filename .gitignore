@@ -3,3 +3,4 @@ polar.db
 __pycache__/
 *.pyc
 *.png
+.vscode/
