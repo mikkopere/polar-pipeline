@@ -545,15 +545,14 @@ with tab_recovery:
                 },
                 "bar": {"color": COL_CTL, "thickness": 0.25},
                 "bgcolor": "rgba(0,0,0,0)",
-                "borderwidth": 1,
-                "bordercolor": "lightgrey",
+                "borderwidth": 0,
                 "steps": [
-                    {"range": [mn,           mn + third],     "color": "#FFCDD2"},
-                    {"range": [mn + third,   mn + 2 * third], "color": "#FFF9C4"},
-                    {"range": [mn + 2*third, mx],             "color": "#C8E6C9"},
+                    {"range": [mn,           mn + third],     "color": "#EF5350"},
+                    {"range": [mn + third,   mn + 2 * third], "color": "#FBC02D"},
+                    {"range": [mn + 2*third, mx],             "color": "#66BB6A"},
                 ],
                 "threshold": {
-                    "line": {"color": "#555", "width": 2},
+                    "line": {"color": "#ECEFF1", "width": 2},
                     "thickness": 0.75,
                     "value": avg
                 }
