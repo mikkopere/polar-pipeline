@@ -8,7 +8,8 @@ Built as a learning project covering Python, REST APIs, OAuth2, SQLite, and SQL.
 
 ## What it does
 
-- Fetches data from Polar AccessLink v4: nightly recharge, training sessions, orthostatic tests, and fitness test results
+- Fetches data from Polar AccessLink v4: nightly recharge, training sessions, sleep-wake vectors, 24/7 heart rate, PPI (pulse-to-pulse interval) HRV, orthostatic tests, and fitness test results
+- Fetches per-second exercise detail from the v3 exercises API: HR/speed/cadence/altitude samples, GPS route, HR zones, and Polar's own cardio load (recent sessions only)
 - Stores everything in a local SQLite database (`polar.db`)
 - Computes training load metrics: TRIMP (Banister), ATL (acute training load / fatigue), CTL (chronic training load / fitness), and TSB (training stress balance / form)
 - Handles OAuth2 token refresh automatically
@@ -25,6 +26,7 @@ polar-pipeline/
 ├── compute_ctl_atl.py       # Computes TRIMP, ATL, CTL, TSB
 ├── polar_client.py          # Polar API client with automatic token refresh
 ├── plot_training_load.py    # Three-panel matplotlib training load chart
+├── dashboard.py             # Streamlit dashboard (readiness, training load, recovery & HRV, sessions)
 ├── schema.sql               # SQLite schema — recreates database from scratch
 ├── environment.yml          # Conda environment specification
 ├── .gitignore
@@ -44,6 +46,11 @@ Seven tables in `polar.db`:
 | `hr_zones` | Time in each HR zone per session (currently empty — see API notes) |
 | `nightly_recharge` | ANS charge, recovery indicator, nocturnal RMSSD and baseline values |
 | `sleep` | Sleep duration and score (placeholder — see API notes) |
+| `sleep_wake_events` | Raw sleep/wake state transitions per night and device |
+| `continuous_hr` | 24/7 heart rate samples (~10 s resolution) |
+| `hrv_windows` | 5-minute RMSSD / mean-HR windows aggregated from PPI samples at fetch time (raw PPI ≈ 80k samples/day is not stored) |
+| `exercise_samples` | Per-second HR, speed, altitude, cadence per exercise |
+| `exercise_route` | GPS route points per exercise |
 | `orthostatic_tests` | Morning HRV test results (RMSSD supine/standing, RR intervals) |
 | `daily_physical` | Weight, resting HR, VO2max from fitness tests |
 | `daily_training_load` | Computed TRIMP, ATL, CTL, TSB per day |
@@ -88,7 +95,7 @@ Create `tokens.json` in the project folder with your credentials:
 Open this URL in a browser (substitute your client_id):
 
 ```
-https://auth.polar.com/oauth/authorize?client_id=YOUR_CLIENT_ID&response_type=code&scope=sleep:read%20nightly_recharge:read%20training_sessions:read%20tests:read%20activity:read%20profile:read%20continuous_samples:read%20devices:read&redirect_uri=http://localhost:5000/oauth2_callback
+https://auth.polar.com/oauth/authorize?client_id=YOUR_CLIENT_ID&response_type=code&scope=sleep:read%20nightly_recharge:read%20training_sessions:read%20tests:read%20activity:read%20profile:read%20continuous_samples:read%20devices:read%20ppi_data:read%20routes:read%20sports:read&redirect_uri=http://localhost:5000/oauth2_callback
 ```
 
 After authorising, copy the `code` parameter from the browser address bar and exchange it for tokens:
@@ -134,6 +141,12 @@ To generate the training load chart:
 python plot_training_load.py
 ```
 
+To open the interactive dashboard in a browser:
+
+```bash
+streamlit run dashboard.py
+```
+
 ---
 
 ## Training load metrics
@@ -164,13 +177,22 @@ HR rest (55 bpm) and max (171 bpm) are taken from Polar profile settings.
 - Tests: orthostatic test results, fitness tests (VO2max, weight, resting HR)
 - Sleep: raw sleep-wake state vectors (see limitations below)
 
+### API version policy
+
+The pipeline uses **v4 for everything it can**: nightly recharge, sleep-wake vectors, training session summaries, and tests (orthostatic + fitness) all come from v4 endpoints. The single exception is per-exercise detail, which v4 does not offer at all. Verified against the [official v4 documentation](https://www.polar.com/polar-api-v4/) and by probing:
+
+- `/v4/data/training-sessions/list` is the **only** training-session endpoint in v4 — there is no per-session or per-exercise endpoint for samples, HR zones, GPS track, or cardio load. Candidate paths (`data/exercises`, `data/exercise-samples`, `data/training-sessions/{id}`, …) return 404, and the list endpoint silently ignores `samples`/`zones`/`route` query parameters. Hence exercise detail comes from the v3 exercises API.
+- `/v4/data/routes/{routeId}` (scope `routes:read`) returns **user-saved navigation routes** (Polar Flow favorites for on-device guidance), *not* GPS tracks recorded during sessions — so it is of no use here.
+- `/v4/data/continuous-samples?features=heart-rate-samples` (scope `continuous_samples:read`) returns 24/7 heart rate (roughly 10-second sampling, entries without `heartRate`/`offsetMillis` mark gaps) — fetched into `continuous_hr`. Too sparse and untimed for per-session analysis, so exercise detail still needs v3.
+- `/v4/data/ppi-samples?features=samples` (scope `ppi_data:read`) returns raw pulse-to-pulse intervals with quality flags — but only one day per request, so the fetcher walks day by day and skips days already stored. Around 80k samples/day, aggregated at fetch time into 5-minute RMSSD windows (`hrv_windows`) using beats with skin contact, no movement, and error estimate ≤ 30 ms.
+
 ### Known API limitations
 
-**Cardio load (TRIMP) not accessible via any public API.**
-The v4 training sessions endpoint (`/v4/data/training-sessions/list`) is the only training session endpoint — there is no per-session detail endpoint. HR zones and Polar's own cardio load values are not returned by any v4 endpoint. An endpoint at `/v4/data/users/{id}/cardio-load` suggested elsewhere does not exist (returns 404). Polar computes cardio load internally from raw HR samples and serves it through private APIs to their own apps. The v3 transaction model gives access to raw HR samples from which it could be computed, but only for sessions synced after client registration.
+**Cardio load and per-second detail available via v3 only, and only for recently synced sessions.**
+The v4 training sessions endpoint (`/v4/data/training-sessions/list`) has no per-session detail endpoint, no HR zones, and no cardio load. However, the v3 exercises API (`/v3/exercises`) lists exercises synced after client registration (last 30 days), and `/v3/exercises/{id}?samples=true&zones=true&route=true` returns Polar's cardio load (`training_load_pro`), HR zone times with limits, per-second samples (type 0 = HR bpm, 1 = speed km/h, 2 = cadence rpm, 3 = altitude m, 9 = temperature, 10 = distance, 11 = RR intervals), and the GPS route. Older sessions have summary data only, so the computed Banister TRIMP remains the basis for ATL/CTL/TSB.
 
 **Sleep scoring not accessible.**
-The `/v4/data/sleeps` endpoint returns only a list of dates. The `/v4/data/sleep-wake-vectors` endpoint returns raw sleep/wake state transitions as millisecond offsets. Polar's sleep score is computed internally and not exposed through the public API. Total sleep time and fragmentation can be derived from the state vectors but requires additional processing.
+The `/v4/data/sleeps` endpoint returns only a list of dates. The `/v4/data/sleep-wake-vectors` endpoint (max 7 days per request) returns raw sleep/wake state transitions as millisecond offsets from the start of the record date, one vector per device. Polar's sleep score and sleep stages are computed internally and not exposed through the public API. The pipeline stores the raw transitions in `sleep_wake_events`; the dashboard derives the main sleep period, time asleep, awakenings, and efficiency from them, picking the most plausible device record per night.
 
 **Historical data window.**
 The API only provides data from the 90 days prior to client registration. Older data is not accessible through any API endpoint.
@@ -184,6 +206,7 @@ The API only provides data from the 90 days prior to client registration. Older 
 |---|---|
 | 15 | Strength training |
 | 18 | Road/indoor cycling |
+| 38 | Road cycling |
 | 83 | Auto-detected activity (Loop Gen 2) |
 | 177 | E-bike |
 
@@ -191,7 +214,5 @@ The API only provides data from the 90 days prior to client registration. Older 
 
 ## Future work
 
-- **Streamlit dashboard**: browser-based daily summary showing recovery status, TSB, and HRV trend
-- **Sleep processing**: derive total sleep time and fragmentation from sleep-wake vectors
 - **SwiftUI app**: iOS app as the long-term interface goal
 - **Automation**: daily cron job on Mac Mini

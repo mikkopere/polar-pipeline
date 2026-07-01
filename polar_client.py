@@ -9,6 +9,7 @@ class PolarClient:
     """Handles authentication and API calls to Polar AccessLink v4."""
 
     BASE_URL = "https://www.polaraccesslink.com/v4"
+    V3_URL   = "https://www.polaraccesslink.com/v3"
     AUTH_URL = "https://auth.polar.com/oauth/token"
 
     def __init__(self):
@@ -50,13 +51,17 @@ class PolarClient:
         self._save_tokens()
         print("  Token refreshed and saved.")
 
-    def get(self, endpoint, params=None):
-        """Make a GET request. Refreshes token proactively if needed."""
+    def get(self, endpoint, params=None, base_url=None):
+        """Make a GET request. Refreshes token proactively if needed.
+
+        base_url overrides the default v4 base (e.g. PolarClient.V3_URL for
+        the v3 exercises API, which serves per-exercise samples and routes).
+        """
         headers = {
             "Authorization": f"Bearer {self.tokens['access_token']}",
             "Accept": "application/json"
         }
-        url = f"{self.BASE_URL}/{endpoint}"
+        url = f"{base_url or self.BASE_URL}/{endpoint}"
         response = requests.get(url, headers=headers, params=params)
 
         # Safety net: retry once if we still get 401

@@ -5,6 +5,9 @@ DROP TABLE IF EXISTS exercises;
 DROP TABLE IF EXISTS training_sessions;
 DROP TABLE IF EXISTS nightly_recharge;
 DROP TABLE IF EXISTS sleep;
+DROP TABLE IF EXISTS sleep_wake_events;
+DROP TABLE IF EXISTS continuous_hr;
+DROP TABLE IF EXISTS hrv_windows;
 DROP TABLE IF EXISTS orthostatic_tests;
 DROP TABLE IF EXISTS daily_physical;
 DROP TABLE IF EXISTS daily_training_load;
@@ -48,6 +51,8 @@ CREATE TABLE IF NOT EXISTS hr_zones
     exercise_id TEXT,
     zone_number INTEGER,
     seconds_in_zone INTEGER,
+    lower_limit INTEGER,
+    upper_limit INTEGER,
     FOREIGN KEY (exercise_id) REFERENCES exercises(exercise_id)
 );
 
@@ -75,6 +80,41 @@ CREATE TABLE IF NOT EXISTS sleep
     total_sleep_sec INTEGER,
     sleep_start TIMESTAMP,
     sleep_end TIMESTAMP
+);
+
+-- Raw sleep/wake state transitions from /v4/data/sleep-wake-vectors.
+-- Offsets are milliseconds from the start of `date`; one vector per device.
+CREATE TABLE IF NOT EXISTS sleep_wake_events
+(
+    date DATE,
+    device_uuid TEXT,
+    start_offset_ms INTEGER,
+    state TEXT,
+    PRIMARY KEY (date, device_uuid, start_offset_ms)
+);
+
+-- 24/7 heart rate from /v4/data/continuous-samples (~10 s resolution).
+CREATE TABLE IF NOT EXISTS continuous_hr
+(
+    date DATE,
+    device_uuid TEXT,
+    offset_ms INTEGER,
+    hr INTEGER,
+    PRIMARY KEY (date, device_uuid, offset_ms)
+);
+
+-- 5-minute HRV windows aggregated from /v4/data/ppi-samples at fetch time.
+-- Raw PPI (~80k samples/day) is not stored; only good-quality beats
+-- (skin contact, no movement, error estimate <= 30 ms) enter the windows.
+CREATE TABLE IF NOT EXISTS hrv_windows
+(
+    date DATE,
+    device_uuid TEXT,
+    window_start_ms INTEGER,
+    rmssd REAL,
+    mean_hr REAL,
+    n_samples INTEGER,
+    PRIMARY KEY (date, device_uuid, window_start_ms)
 );
 
 CREATE TABLE IF NOT EXISTS orthostatic_tests

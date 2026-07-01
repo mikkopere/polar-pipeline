@@ -8,4 +8,6 @@ dependencies:
   - notebook
   - numpy
   - pandas
+  - streamlit
+  - plotly
 prefix: /home/mikko/anaconda3/envs/polar
