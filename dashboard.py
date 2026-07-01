@@ -524,7 +524,7 @@ with tab_load:
 # =====================================================================
 with tab_recovery:
 
-    def hrv_gauge(series, current, label):
+    def hrv_gauge(series, current):
         """Semicircular gauge showing current HRV value within personal min/max range."""
         mn  = float(series.min())
         mx  = float(series.max())
@@ -534,7 +534,6 @@ with tab_recovery:
         fig = go.Figure(go.Indicator(
             mode="gauge+number",
             value=float(current),
-            title={"text": label, "font": {"size": 13}},
             number={"suffix": " ms", "font": {"size": 28}, "valueformat": ".0f"},
             gauge={
                 "axis": {
@@ -574,7 +573,7 @@ with tab_recovery:
         if rec_row is not None and not rmssd_series.empty:
             st.caption(f"Nocturnal RMSSD — HRV during sleep ({days}-day personal range)")
             st.plotly_chart(
-                hrv_gauge(rmssd_series, rec_row["rmssd"], "Nocturnal RMSSD (during sleep)"),
+                hrv_gauge(rmssd_series, rec_row["rmssd"]),
                 width="stretch"
             )
 
@@ -584,8 +583,7 @@ with tab_recovery:
         if latest_ortho is not None and not ortho_series.empty:
             st.caption(f"Morning RMSSD supine — orthostatic test ({days}-day personal range)")
             st.plotly_chart(
-                hrv_gauge(ortho_series, latest_ortho["rmssd_supine"],
-                          "Morning RMSSD (supine, orthostatic test)"),
+                hrv_gauge(ortho_series, latest_ortho["rmssd_supine"]),
                 width="stretch"
             )
 
